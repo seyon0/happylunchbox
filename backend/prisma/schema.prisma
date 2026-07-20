@@ -1,0 +1,569 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id               String    @id @default(uuid())
+  email            String    @unique
+  password         String?
+  firstName        String
+  lastName         String
+  role             Role      @default(CUSTOMER)
+  phone            String?
+  dateOfBirth      DateTime?
+  walletBalance    Float     @default(0.0)
+  loyaltyPoints    Int       @default(0)
+  ltv              Float     @default(0.0)
+  segment          String?   // e.g. VIP, REGULAR, AT_RISK
+  isBanned         Boolean   @default(false)
+  ipAllowList      String?   // comma-separated IPs for admin sub-users
+  savedBoxes       Json?
+
+  // OTP & Verification
+  otpCode          String?
+  otpExpiry        DateTime?
+  isVerified       Boolean   @default(false)
+  twoFactorEnabled Boolean   @default(false)
+
+  // OAuth
+  provider         String    @default("LOCAL")
+  providerId       String?
+
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  
+  zoneId           String?
+  zone             Zone?     @relation(fields: [zoneId], references: [id])
+
+  shopStaff        ShopStaff[]
+  bookings         Booking[]
+  riderDeliveries  Booking[] @relation("RiderDeliveries")
+  addresses        Address[]
+  smtpConfig       SmtpConfig?
+  subAdminRole     SubAdminRole?
+  auditLogs        AuditLog[]
+  supportTickets   SupportTicket[]
+  sessions         Session[]
+  resetTokens      PasswordResetToken[]
+  walletTransactions WalletTransaction[]
+}
+
+model SubAdminRole {
+  id                  String   @id @default(uuid())
+  userId              String   @unique
+  user                User     @relation(fields: [userId], references: [id])
+  name                String   @default("Custom Role")
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+  
+  permissions         RolePermission[]
+}
+
+model Permission {
+  id          String   @id @default(uuid())
+  module      String   // e.g., 'VENDORS', 'ORDERS', 'FINANCE'
+  action      String   // 'READ', 'WRITE', 'DELETE'
+  description String?
+  createdAt   DateTime @default(now())
+  
+  roles       RolePermission[]
+  
+  @@unique([module, action])
+}
+
+model RolePermission {
+  id             String       @id @default(uuid())
+  subAdminRoleId String
+  permissionId   String
+  
+  role           SubAdminRole @relation(fields: [subAdminRoleId], references: [id])
+  permission     Permission   @relation(fields: [permissionId], references: [id])
+  
+  @@unique([subAdminRoleId, permissionId])
+}
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  actorId    String
+  actor      User     @relation(fields: [actorId], references: [id])
+  action     String
+  module     String   // e.g., 'VENDORS', 'SETTINGS'
+  targetType String
+  targetId   String
+  detail     String?  
+  beforeData Json?
+  afterData  Json?
+  ipAddress  String?
+  createdAt  DateTime @default(now())
+}
+
+model Session {
+  id          String   @id @default(uuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id])
+  tokenHash   String   @unique
+  ipAddress   String?
+  userAgent   String?
+  isRevoked   Boolean  @default(false)
+  expiresAt   DateTime
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model PasswordResetToken {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  token     String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+}
+
+enum TransactionType {
+  CREDIT
+  DEBIT
+}
+
+model WalletTransaction {
+  id          String   @id @default(uuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id])
+  type        TransactionType
+  amount      Float
+  reason      String
+  createdAt   DateTime @default(now())
+}
+
+model SystemConfig {
+  id        String   @id @default(uuid())
+  key       String   @unique
+  value     String   
+  label     String?
+  group     String?
+  updatedAt DateTime @updatedAt
+}
+
+model CommissionTier {
+  id             String   @id @default(uuid())
+  name           String
+  type           String   // FLAT or TIERED
+  flatPercent    Float?
+  tierThresholds Json?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  shops          Shop[]
+}
+
+model SmtpConfig {
+  id                   String   @id @default(uuid())
+  userId               String   @unique
+  user                 User     @relation(fields: [userId], references: [id])
+  portalType           String
+  emailAddress         String
+  encryptedAppPassword String
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+}
+
+model Address {
+  id           String   @id @default(uuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id])
+  label        String
+  street       String
+  city         String
+  postcode     String
+  isDefault    Boolean  @default(false)
+  instructions String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  
+  zoneId       String?
+  zone         Zone?    @relation(fields: [zoneId], references: [id])
+}
+
+model Shop {
+  id                    String           @id @default(uuid())
+  commissionTierId      String?
+  commissionTier        CommissionTier?  @relation(fields: [commissionTierId], references: [id])
+  name                  String
+  cuisineType           String
+  rating                Float            @default(0.0)
+  reviewCount           Int              @default(0)
+  deliveryTime          String
+  deliveryArea          String
+  minOrder              Float            @default(0.0)
+  isOperating           Boolean          @default(true)
+  onboardingStatus      OnboardingStatus @default(PENDING)
+  vatNumber             String?
+  payoutCycleDay        Int              @default(1)
+  upiId                 String?
+  bookingCutoffHours    Int              @default(24)
+  cancellationLeadHours Int              @default(6)
+  documents             Json?
+  encryptedBankDetails  String?          
+  seoTags               Json?
+  createdAt             DateTime         @default(now())
+  updatedAt             DateTime         @updatedAt
+  
+  zoneId                String?
+  zone                  Zone?            @relation(fields: [zoneId], references: [id])
+
+  staff                 ShopStaff[]
+  menuCategories        MenuCategory[]
+  menuItems             MenuItem[]
+  bookings              Booking[]
+  payouts               Payout[]
+  boostedListings       BoostedListing[]
+}
+
+model MenuCategory {
+  id        String     @id @default(uuid())
+  shopId    String
+  shop      Shop       @relation(fields: [shopId], references: [id])
+  name      String
+  order     Int        @default(0)
+  startTime String?
+  endTime   String?
+  isActive  Boolean    @default(true)
+  menuItems MenuItem[]
+}
+
+model MenuItem {
+  id                   String        @id @default(uuid())
+  shopId               String
+  shop                 Shop          @relation(fields: [shopId], references: [id])
+  categoryId           String
+  category             MenuCategory  @relation(fields: [categoryId], references: [id])
+  name                 String
+  description          String
+  price                Float
+  photoUrl             String?
+  allergens            Json?
+  nutritionalInfo      Json?
+  dietary              String?
+  isAvailable          Boolean       @default(true)
+  autoReEnableAt       DateTime?
+  promoCode            String?
+  promoDiscountPercent Float?
+  promoExpiry          DateTime?
+  promoEnabled         Boolean       @default(false)
+  vatRate              Float         @default(20.0)
+  createdAt            DateTime      @default(now())
+  updatedAt            DateTime      @updatedAt
+
+  variants             ItemVariant[]
+  addOnGroups          AddOnGroup[]
+}
+
+model ItemVariant {
+  id              String    @id @default(uuid())
+  menuItemId      String
+  menuItem        MenuItem  @relation(fields: [menuItemId], references: [id], onDelete: Cascade)
+  name            String
+  priceAdjustment Float
+  isAvailable     Boolean   @default(true)
+  autoReEnableAt  DateTime?
+}
+
+model AddOnGroup {
+  id          String      @id @default(uuid())
+  menuItemId  String
+  menuItem    MenuItem    @relation(fields: [menuItemId], references: [id], onDelete: Cascade)
+  name        String
+  isRequired  Boolean     @default(false)
+  minSelect   Int         @default(0)
+  maxSelect   Int         @default(1)
+  items       AddOnItem[]
+}
+
+model AddOnItem {
+  id             String     @id @default(uuid())
+  groupId        String
+  group          AddOnGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  name           String
+  price          Float
+  isAvailable    Boolean    @default(true)
+  autoReEnableAt DateTime?
+}
+
+model Booking {
+  id                  String   @id @default(uuid())
+  userId              String
+  user                User     @relation(fields: [userId], references: [id])
+  shopId              String
+  shop                Shop     @relation(fields: [shopId], references: [id])
+  riderId             String?
+  rider               User?    @relation("RiderDeliveries", fields: [riderId], references: [id])
+  status              Status   @default(PENDING)
+  totalAmount         Float
+  vatAmount           Float    @default(0.0)
+  platformFee         Float    @default(0.0)
+  paymentGateway      String   @default("STRIPE")
+  refundStatus        String?
+  deliveryDate        DateTime
+  deliverySlot        String
+  riskScore           Float?
+  deliveryType        String   @default("DELIVERY")
+  paymentMethod       String   @default("ONLINE")
+  payoutAmount        Float    @default(0.0)
+  specialInstructions String?
+  rejectionReason     String?
+  isDisputed          Boolean  @default(false)
+  isScheduled         Boolean  @default(false)
+  scheduledFor        DateTime?
+  items               BookingItem[]
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+}
+
+model Payout {
+  id          String       @id @default(uuid())
+  shopId      String
+  shop        Shop         @relation(fields: [shopId], references: [id])
+  periodStart DateTime
+  periodEnd   DateTime
+  grossAmount Float
+  commission  Float
+  netAmount   Float
+  status      PayoutStatus @default(PENDING)
+  gatewayRef  String?
+  isHeld      Boolean      @default(false)
+  triggeredAt DateTime     @default(now())
+  settledAt   DateTime?
+}
+
+model FinanceSettings {
+  id               String   @id @default(uuid())
+  vatStandardRate  Float    @default(20.0)
+  vatReducedRate   Float    @default(5.0)
+  vatZeroRate      Float    @default(0.0)
+  vatIsInclusive   Boolean  @default(false)
+  platformFeeFlat  Float    @default(0.50)
+  gatewayMode      String   @default("SANDBOX") // SANDBOX or LIVE
+  activeProvider   String   @default("STRIPE") // STRIPE, GOCARDLESS, PAYPAL
+  updatedAt        DateTime @updatedAt
+}
+
+model DeliveryChargeRule {
+  id              String   @id @default(uuid())
+  name            String
+  basis           String   // ORDER_VALUE or DISTANCE
+  minThreshold    Float
+  maxThreshold    Float
+  feeAmount       Float
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+model RefundLog {
+  id          String   @id @default(uuid())
+  orderId     String
+  amount      Float
+  reasonCode  String   // e.g., MISSING_ITEM, LATE_DELIVERY, CUSTOMER_REQUEST
+  notes       String?  
+  processedAt DateTime @default(now())
+}
+
+model Coupon {
+  id           String    @id @default(uuid())
+  code         String    @unique
+  type         String    // PERCENTAGE, FLAT
+  value        Float
+  scope        String    @default("GLOBAL") // GLOBAL, SHOP, CATEGORY
+  targetId     String?   // ID of the shop or category if scoped
+  isActive     Boolean   @default(true)
+  usageLimit   Int?
+  currentUsage Int       @default(0)
+  expiresAt    DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+}
+
+model BoostedListing {
+  id         String   @id @default(uuid())
+  shopId     String
+  shop       Shop     @relation(fields: [shopId], references: [id])
+  slot       Int      // 1, 2, 3 (Position on the home screen)
+  isActive   Boolean  @default(true)
+  startDate  DateTime
+  endDate    DateTime
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}
+
+model CmsPage {
+  id            String   @id @default(uuid())
+  slug          String   @unique // e.g., 'about-us', 'privacy-policy'
+  title         String
+  content       String   
+  lastUpdatedBy String?
+  updatedAt     DateTime @updatedAt
+}
+
+model MessageTemplate {
+  id        String   @id @default(uuid())
+  slug      String   @unique // e.g., 'orderConfirmation', 'promoBlast'
+  channel   String   // EMAIL, SMS
+  subject   String?
+  body      String   
+  updatedAt DateTime @updatedAt
+}
+
+model Review {
+  id           String   @id @default(uuid())
+  orderId      String
+  customerId   String
+  targetType   String   // SHOP or RIDER
+  targetId     String
+  rating       Int      // 1 to 5
+  comment      String?  
+  isHidden     Boolean  @default(false)
+  hiddenReason String?  // ABUSIVE, FAKE
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model SupportTicket {
+  id          String       @id @default(uuid())
+  userId      String
+  user        User         @relation(fields: [userId], references: [id])
+  subject     String
+  status      TicketStatus @default(OPEN)
+  priority    String       @default("NORMAL")
+  slaDeadline DateTime?
+  isEscalated Boolean      @default(false)
+  assignedTo  String?
+  messages    Json
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+}
+
+model SystemSetting {
+  id        String   @id @default(uuid())
+  key       String   @unique
+  value     Json
+  category  String   @default("GENERAL") // GENERAL, INTEGRATIONS, SEO, SYSTEM
+  updatedAt DateTime @updatedAt
+}
+
+model AdminAlert {
+  id        String   @id @default(uuid())
+  type      String   // NEW_APPLICATION, FRAUD_SIGNAL, GATEWAY_FAILURE, ESCALATION
+  message   String   
+  isRead    Boolean  @default(false)
+  severity  String   @default("INFO") // INFO, WARNING, CRITICAL
+  createdAt DateTime @default(now())
+}
+
+model IntegrationConfig {
+  id        String   @id @default(uuid())
+  name      String   @unique // e.g. "ZENDESK", "MAILCHIMP", "SENDGRID"
+  isActive  Boolean  @default(false)
+  apiKey    String?
+  updatedAt DateTime @updatedAt
+}
+
+model Zone {
+  id          String   @id @default(uuid())
+  name        String   @unique
+  city        String
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  users       User[]
+  shops       Shop[]
+  addresses   Address[]
+}
+
+enum Role {
+  ADMIN
+  CUSTOMER
+  KITCHEN
+  RIDER
+}
+
+enum BoostStatus {
+  ACTIVE
+  PAUSED
+  COMPLETED
+}
+
+model ShopStaff {
+  id        String   @id @default(uuid())
+  shopId    String
+  shop      Shop     @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role      ShopRole @default(STAFF)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  @@unique([shopId, userId])
+}
+
+enum ShopRole {
+  OWNER
+  MANAGER
+  STAFF
+}
+
+enum Status {
+  PENDING
+  ACCEPTED
+  PREPARING
+  READY_FOR_PICKUP
+  HANDED_TO_RIDER
+  COMPLETED
+  CANCELLED
+}
+
+model BookingItem {
+  id          String   @id @default(uuid())
+  bookingId   String
+  booking     Booking  @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  menuItemId  String?
+  name        String
+  quantity    Int
+  price       Float
+  addOns      Json?
+}
+
+enum OnboardingStatus {
+  PENDING
+  UNDER_REVIEW
+  VERIFIED
+  REJECTED
+}
+
+enum PayoutStatus {
+  PENDING
+  PROCESSING
+  PAID
+  FAILED
+}
+
+enum TicketStatus {
+  OPEN
+  IN_PROGRESS
+  RESOLVED
+  CLOSED
+}
+
+model PromotionBanner {
+  id        String   @id @default(uuid())
+  title     String
+  imageUrl  String
+  link      String?
+  isActive  Boolean  @default(true)
+  validUntil DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
